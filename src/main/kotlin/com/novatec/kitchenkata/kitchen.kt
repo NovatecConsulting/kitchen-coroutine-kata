@@ -1,37 +1,70 @@
 package com.novatec.kitchenkata
 
-import java.util.*
-import kotlin.system.exitProcess
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 
 class Kitchen(
-	val stations: List<Station>,
-	val foodToPrepare: MutableList<Food>,
-	val finishedMeal: MutableList<Food> = mutableListOf()
+        val stations: List<Station>,
+        val foodToPrepare: MutableList<Food>,
+        val finishedMeal: MutableList<Food> = mutableListOf()
 ) {
-	fun run() {
-		while (foodToPrepare.isNotEmpty()) {
-			findMoreWork()
-		}
-	}
+    fun run() {
+        val inital = foodToPrepare.size
+        val prepareChannel = Channel<Food>(capacity = foodToPrepare.size)
+        val returnChannels = stations.map { it.output }
 
-	private fun findMoreWork() {
-		val done = foodToPrepare.filter { it.cookingSteps.isEmpty() }
-		finishedMeal.addAll(done)
-		foodToPrepare.removeAll(done)
+        runBlocking {
+            launch {
+                while(finishedMeal.size < inital){
+                    println(finishedMeal)
+                    delay(100)
+                }
+                prepareChannel.close()
+                stations.forEach{ it.close()}
+                print("closed all channels")
+            }
+            doRun(prepareChannel, returnChannels)
+        }
+    }
 
-		for (food in foodToPrepare) {
-			for (station in stations) {
-				if (station.canPrepare(food)) {
-					station.prepare(food)
-					return
-				}
-			}
-		}
-		if (foodToPrepare.isNotEmpty()) {
-			println("Deadlock detected.")
-			println("SHUT IT DOWN")
-			exitProcess(-25)
-		}
-	}
+    private suspend fun CoroutineScope.doRun(prepareChannel: Channel<Food>, returnChannels: List<Channel<Food>>) {
+        foodToPrepare.forEach {
+            launch {
+                println("Sending $it to $prepareChannel")
+                prepareChannel.send(it)
+            }
+        }
+
+        for (returnChannel in returnChannels) {
+            launch {
+                for (food in returnChannel) {
+                    println("Got Back $food from $returnChannel")
+                    if (food.cookingSteps.isNotEmpty()) {
+                        prepareChannel.send(food)
+                    } else {
+                        finishedMeal.add(food)
+                        println("#added $food")
+                    }
+                    println("Received $food")
+                }
+            }
+        }
+
+        stations.forEach {
+            launch { it.prepare() }
+        }
+
+        for (food in prepareChannel) {
+            stations.forEach { station ->
+                launch {
+                    println("Try to prepare $food with $station")
+                    if (station.canPrepare(food)) {
+                        println("Sending $food to $station")
+                        station.input.send(food)
+                    }
+                }
+            }
+        }
+    }
 }
 
