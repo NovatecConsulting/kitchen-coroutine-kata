@@ -3,6 +3,7 @@ package com.novatec.kitchenkata
 import io.kotlintest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotlintest.matchers.collections.shouldHaveSize
 import io.kotlintest.shouldBe
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
@@ -10,7 +11,7 @@ import org.junit.jupiter.api.Test
 class KitchenTest {
 
 	@Test
-	fun `Food Is Cooked Correctly`() {
+	fun `Food Is Cooked Correctly`() = runBlocking {
 		val cuttingStation = CuttingStation(perfectFoodHandler())
 		val peelingStation = PeelingStation(perfectFoodHandler())
 		val spicingStation = SpicingStation(perfectFoodHandler())
@@ -50,7 +51,7 @@ class KitchenTest {
 	}
 
 	@Test
-	fun `Burned Potatoes`() {
+	fun `Burned Potatoes`() = runBlocking {
 		val peelingStation = PeelingStation(perfectFoodHandler())
 		val grillingStation = GrillingStation(failingFoodHandler())
 
@@ -74,7 +75,7 @@ class KitchenTest {
 	}
 
 	@Test
-	fun `Steak Fails And Potatoes Succeed`() {
+	fun `Steak Fails And Potatoes Succeed`() = runBlocking {
 		val cuttingStation = CuttingStation(perfectFoodHandler())
 		val peelingStation = PeelingStation(perfectFoodHandler())
 		val spicingStation = SpicingStation(failingFoodHandler())

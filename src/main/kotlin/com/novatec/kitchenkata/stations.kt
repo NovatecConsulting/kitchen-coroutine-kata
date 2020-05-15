@@ -11,7 +11,7 @@ class Handler(
 ) {
     suspend fun handle(food: Food, step: CookingStep) {
         println("${step.verb.capitalize()} some ${food.name} ...")
-        delay(1000L * 2)
+        delay(1000L)
         if (Random.nextInt(1, 100) <= errorChance) {
             throw RuntimeException("Oops")
         }
@@ -20,30 +20,25 @@ class Handler(
 
 abstract class Station(
         private val handler: Handler = Handler(),
-        val input: Channel<Food> = Channel<Food>(),
-        val output: Channel<Food> = Channel<Food>()
+        val input: Channel<Food> = Channel()
 ) {
     abstract var handlesStep: CookingStep
 
-    suspend fun close(){
+    fun close() {
         input.close()
-        output.close()
     }
 
-    suspend fun prepare() {
+    suspend fun prepare(output: Channel<Food>) {
         for (food in input) {
             try {
                 val step = food.cookingSteps.pop()
-                println("Popping $step from $food")
                 if (food.isBorked) {
                     println("This ${food.name} is ${food.conditions.last()}, we can't be ${step.verb} that!")
                 } else {
                     handler.handle(food, handlesStep)
                     food.addStepResult(step)
-                    println("Sending back $food")
                 }
             } catch (e: Exception) {
-                println("Something went wrong while ${handlesStep.verb} ${food.name}: [${e.message}]")
                 food.addMishap(handlesStep)
             }
             output.send(food)

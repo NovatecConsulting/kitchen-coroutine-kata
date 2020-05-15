@@ -1,69 +1,79 @@
 package com.novatec.kitchenkata
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 class Kitchen(
         val stations: List<Station>,
         val foodToPrepare: MutableList<Food>,
         val finishedMeal: MutableList<Food> = mutableListOf()
 ) {
-    fun run() {
-        val inital = foodToPrepare.size
-        val prepareChannel = Channel<Food>(capacity = foodToPrepare.size)
-        val returnChannels = stations.map { it.output }
+    suspend fun run() = coroutineScope {
+        val orderSize = foodToPrepare.size
+        val finishedChannel = Channel<Food>(capacity = orderSize)
+        val foodQueue = Channel<Food>(capacity = orderSize)
+        val stationsOutput = Channel<Food>(capacity = orderSize)
 
-        runBlocking {
-            launch {
-                while(finishedMeal.size < inital){
-                    println(finishedMeal)
-                    delay(100)
-                }
-                prepareChannel.close()
-                stations.forEach{ it.close()}
-                print("closed all channels")
+        moveFoodToQueue(foodQueue)
+        startStations(stationsOutput)
+        startFoodQueueSentinel( foodQueue)
+        startStationOutputSentinel( stationsOutput, foodQueue, finishedChannel)
+        waitForCookingToComplete(finishedChannel, orderSize, stationsOutput, foodQueue)
+    }
+
+    private suspend fun waitForCookingToComplete(
+            finishedChannel: Channel<Food>,
+            orderSize: Int,
+            stationsOutput: Channel<Food>,
+            foodQueue: Channel<Food>
+    ) {
+        for (finishedFood in finishedChannel) {
+            finishedMeal.add(finishedFood)
+            if (finishedMeal.size >= orderSize) {
+                finishedChannel.close()
+                stationsOutput.close()
+                foodQueue.close()
+                stations.forEach { it.close() }
             }
-            doRun(prepareChannel, returnChannels)
         }
     }
 
-    private suspend fun CoroutineScope.doRun(prepareChannel: Channel<Food>, returnChannels: List<Channel<Food>>) {
-        foodToPrepare.forEach {
-            launch {
-                println("Sending $it to $prepareChannel")
-                prepareChannel.send(it)
-            }
-        }
-
-        for (returnChannel in returnChannels) {
-            launch {
-                for (food in returnChannel) {
-                    println("Got Back $food from $returnChannel")
-                    if (food.cookingSteps.isNotEmpty()) {
-                        prepareChannel.send(food)
-                    } else {
-                        finishedMeal.add(food)
-                        println("#added $food")
-                    }
-                    println("Received $food")
+    private fun CoroutineScope.startStationOutputSentinel(
+            stationsOutput: Channel<Food>,
+            foodQueue: Channel<Food>,
+            finishedChannel: Channel<Food>
+    ) {
+        launch {
+            for (food in stationsOutput) {
+                if (food.cookingSteps.isNotEmpty()) {
+                    foodQueue.send(food)
+                } else {
+                    finishedChannel.send(food)
                 }
             }
         }
+    }
 
+    private fun CoroutineScope.startFoodQueueSentinel(foodQueue: Channel<Food>) {
+        launch {
+            for (food in foodQueue) {
+                stations.first { it.canPrepare(food) }.input.send(food)
+            }
+        }
+    }
+
+    private fun CoroutineScope.startStations(stationsOutput: Channel<Food>) {
         stations.forEach {
-            launch { it.prepare() }
+            launch { it.prepare(stationsOutput) }
         }
+    }
 
-        for (food in prepareChannel) {
-            stations.forEach { station ->
-                launch {
-                    println("Try to prepare $food with $station")
-                    if (station.canPrepare(food)) {
-                        println("Sending $food to $station")
-                        station.input.send(food)
-                    }
-                }
-            }
+    private suspend fun moveFoodToQueue(foodQueue: Channel<Food>) {
+        foodToPrepare.forEach {
+            foodQueue.send(it)
         }
     }
 }

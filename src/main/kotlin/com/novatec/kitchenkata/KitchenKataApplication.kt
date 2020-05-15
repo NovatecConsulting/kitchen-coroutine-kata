@@ -1,7 +1,8 @@
 package com.novatec.kitchenkata
 
-fun main() {
+import kotlinx.coroutines.runBlocking
 
+fun main() = runBlocking {
 	val cuttingStation = CuttingStation(Handler(0))
 	val peelingStation = PeelingStation()
 	val spicingStation = SpicingStation()
